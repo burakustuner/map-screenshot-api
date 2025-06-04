@@ -7,24 +7,38 @@ app.use(express.json());
 app.post('/screenshot', async (req, res) => {
   const { lat, lon, zoom } = req.body;
 
-  const browser = await puppeteer.launch({
-    headless: 'new',
-    args: ['--no-sandbox', '--disable-setuid-sandbox']
-  });
+  try {
+    const browser = await puppeteer.launch({
+      headless: 'new',
+      args: ['--no-sandbox', '--disable-setuid-sandbox']
+    });
 
-  const page = await browser.newPage();
-await page.setViewport({ width: 640, height: 480 });  // optimize boyut
-  const html = generateHtml(lat, lon, zoom);
-  await page.setContent(html, { waitUntil: 'networkidle0' });
-//await page.setContent(html, { waitUntil: 'load' });    // daha hızlı render
+    const page = await browser.newPage();
 
-  const buffer = await page.screenshot({ type: 'png' });
-  await browser.close();
+    // ✅ Küçük ve optimize çözünürlük
+    await page.setViewport({ width: 640, height: 480 });
 
-  res.set('Content-Type', 'image/png');
-  res.send(buffer);
+    const html = generateHtml(lat, lon, zoom);
+    await page.setContent(html, { waitUntil: 'load' });
+
+    // ✅ JPEG çıktı, kalite düşürülerek boyut azaltıldı
+    const buffer = await page.screenshot({
+      type: 'jpeg',
+      quality: 70,
+      fullPage: false
+    });
+
+    await browser.close();
+
+    res.set('Content-Type', 'image/jpeg');
+    res.send(buffer);
+  } catch (err) {
+    console.error('Screenshot Error:', err);
+    res.status(500).send('Error generating screenshot');
+  }
 });
 
+// 🔧 HTML + OpenLayers haritası
 function generateHtml(lat, lon, zoom) {
   return `
   <!DOCTYPE html>
@@ -48,20 +62,12 @@ function generateHtml(lat, lon, zoom) {
     <script>
       const map = new ol.Map({
         target: 'map',
+        controls: [], // ✅ UI kontrolleri kaldırıldı
         layers: [
           new ol.layer.Tile({
             source: new ol.source.OSM()
-          }),
-          new ol.layer.Tile({
-            source: new ol.source.TileWMS({
-              url: 'https://demo.boundlessgeo.com/geoserver/ows',
-              params: {
-                'LAYERS': 'ne:ne',
-                'TILED': true
-              },
-              serverType: 'geoserver'
-            })
           })
+          // WMS kaldırıldı - istersen tekrar ekleyebilirsin
         ],
         view: new ol.View({
           center: ol.proj.fromLonLat([${lon}, ${lat}]),
@@ -74,4 +80,4 @@ function generateHtml(lat, lon, zoom) {
 }
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`Server listening on ${PORT}`));
+app.listen(PORT, () => console.log(`Server listening on port ${PORT}`));
