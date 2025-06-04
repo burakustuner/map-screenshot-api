@@ -1,8 +1,7 @@
 FROM node:18
 
-# Puppeteer için gereken bağımlılıklar
+# Gerekli sistem kütüphaneleri (libdrm, libx11, libnss3, Chromium için şart)
 RUN apt-get update && apt-get install -y \
-    wget \
     ca-certificates \
     fonts-liberation \
     libappindicator3-1 \
@@ -14,8 +13,14 @@ RUN apt-get update && apt-get install -y \
     libxtst6 \
     lsb-release \
     xdg-utils \
+    libdrm2 \
+    libgbm1 \
+    libxshmfence1 \
+    libxrandr2 \
+    libgtk-3-0 \
+    wget \
     --no-install-recommends && \
-    rm -rf /var/lib/apt/lists/*
+    apt-get clean && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
@@ -25,4 +30,3 @@ RUN npm install
 COPY . .
 
 CMD ["npm", "start"]
-    
