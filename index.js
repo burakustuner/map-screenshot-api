@@ -19,8 +19,7 @@ app.post('/screenshot', async (req, res) => {
     await page.setViewport({ width: 640, height: 480 });
 
     const html = generateHtml(lat, lon, zoom);
-    await page.setContent(html, { waitUntil: 'load' });
-
+ await page.setContent(html, { waitUntil: 'networkidle0' });
     // ✅ JPEG çıktı, kalite düşürülerek boyut azaltıldı
     const buffer = await page.screenshot({
       type: 'jpeg',
