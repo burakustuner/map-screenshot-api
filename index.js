@@ -13,10 +13,10 @@ app.post('/screenshot', async (req, res) => {
   });
 
   const page = await browser.newPage();
-  await page.setViewport({ width: 1024, height: 768 });
-
+await page.setViewport({ width: 640, height: 480 });  // optimize boyut
   const html = generateHtml(lat, lon, zoom);
-  await page.setContent(html, { waitUntil: 'networkidle0' });
+  //await page.setContent(html, { waitUntil: 'networkidle0' });
+await page.setContent(html, { waitUntil: 'load' });    // daha hızlı render
 
   const buffer = await page.screenshot({ type: 'png' });
   await browser.close();
