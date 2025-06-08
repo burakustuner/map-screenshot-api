@@ -26,13 +26,13 @@ app.post('/screenshot', async (req, res) => {
     );
 
     const buffer = await page.screenshot({
-      type: 'png',
+      type: 'jpeg',
       quality: 70,
       fullPage: false
     });
 
     await browser.close();
-
+console.log("success")
     res.set('Content-Type', 'image/jpeg');
     res.send(buffer);
   } catch (err) {
