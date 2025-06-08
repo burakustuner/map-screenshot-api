@@ -1,3 +1,11 @@
+/*
+Name: map-screenshoot-api
+Author: burakustuner
+Date:8.06.2025
+GPT-Assisted:(Model: GPT-4o)
+Description: Express.js + Puppeteer tabanlı, WMS destekli harita ekran görüntüsü servisi.
+*/
+
 const express = require('express');
 const puppeteer = require('puppeteer');
 const rateLimit = require('express-rate-limit');
@@ -5,10 +13,10 @@ const rateLimit = require('express-rate-limit');
 const app = express();
 app.use(express.json());
 
-// Rate Limiting - IP başına 15 dakikada 10 istek
+// Rate Limiting - IP başına 1 dakikada 10 istek
 const screenshotLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 dakika
-  max: 10, // IP başına maksimum 10 istek
+  windowMs: 1 * 60 * 1000, // 15 dakika
+  max: 60, // IP başına maksimum 60 istek
   message: {
     error: 'Too many screenshot requests, please try again later.',
     retryAfter: '15 minutes'
