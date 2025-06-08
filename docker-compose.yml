@@ -1,0 +1,13 @@
+version: '3.8'
+
+services:
+  map-screenshot-api:
+    build: .
+    container_name: map-screenshot-api
+    ports:
+      - "1621:3000"  # Uygulaman hangi portta dinliyorsa
+    environment:
+      - NODE_ENV=production
+    volumes:
+      - .:/app
+    restart: unless-stopped
