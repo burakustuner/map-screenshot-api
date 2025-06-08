@@ -209,7 +209,7 @@ app.get('/screenshot', screenshotLimiter, async (req, res) => {
       { timeout: 20000 }
     );
 
-    await page.waitForTimeout(1000);
+    await new Promise(resolve => setTimeout(resolve, 1000));
 
     const screenshotOptions = {
       type: format,
@@ -307,7 +307,7 @@ app.post('/screenshot', screenshotLimiter, async (req, res) => {
     );
 
     // Ek güvenlik: biraz daha bekle ki render tamamen tamamlansın
-    await page.waitForTimeout(1000);
+    await new Promise(resolve => setTimeout(resolve, 1000));
 
     // Screenshot ayarları
     const screenshotOptions = {
