@@ -134,6 +134,121 @@ app.get('/health', (req, res) => {
   });
 });
 
+// GET Screenshot Endpoint - Query parameters ile
+app.get('/screenshot', screenshotLimiter, async (req, res) => {
+  const { 
+    lat, 
+    lon, 
+    zoom, 
+    width = 640, 
+    height = 480, 
+    format = 'jpeg',
+    quality = 70
+  } = req.query;
+
+  // Query parametrelerini number'a çevir
+  const numLat = parseFloat(lat);
+  const numLon = parseFloat(lon);
+  const numZoom = parseInt(zoom);
+  const numWidth = parseInt(width);
+  const numHeight = parseInt(height);
+  const numQuality = parseInt(quality);
+
+  // Temel parametre kontrolü
+  if (isNaN(numLat) || isNaN(numLon) || isNaN(numZoom)) {
+    return res.status(400).json({
+      error: 'Missing or invalid required parameters',
+      required: ['lat', 'lon', 'zoom'],
+      example: '/screenshot?lat=41.0082&lon=28.9784&zoom=15'
+    });
+  }
+
+  // Input validation
+  const validationErrors = validateInput(numLat, numLon, numZoom, numWidth, numHeight);
+  if (validationErrors.length > 0) {
+    return res.status(400).json({
+      error: 'Validation failed',
+      details: validationErrors,
+      example: '/screenshot?lat=41.0082&lon=28.9784&zoom=15&width=800&height=600'
+    });
+  }
+
+  // Format kontrolü
+  const supportedFormats = ['jpeg', 'png', 'webp'];
+  if (!supportedFormats.includes(format)) {
+    return res.status(400).json({
+      error: 'Unsupported format',
+      supported: supportedFormats,
+      example: '/screenshot?lat=41.0082&lon=28.9784&zoom=15&format=png'
+    });
+  }
+
+  // Quality kontrolü (sadece jpeg için)
+  if (format === 'jpeg' && (numQuality < 1 || numQuality > 100)) {
+    return res.status(400).json({
+      error: 'Quality must be between 1 and 100 for JPEG format'
+    });
+  }
+
+  let browser = null;
+
+  try {
+    console.log(`GET Screenshot request: lat=${numLat}, lon=${numLon}, zoom=${numZoom}, ${numWidth}x${numHeight}, ${format}`);
+    
+    browser = await browserPool.getBrowser();
+    const page = await browser.newPage();
+    
+    await page.setViewport({ width: numWidth, height: numHeight });
+
+    // GET request'te WMS desteği yok (çok karmaşık olur)
+    const html = generateHtml(numLat, numLon, numZoom, null);
+    await page.setContent(html, { waitUntil: 'domcontentloaded' });
+
+    await page.waitForFunction(
+      () => document.title === 'ready',
+      { timeout: 20000 }
+    );
+
+    await page.waitForTimeout(1000);
+
+    const screenshotOptions = {
+      type: format,
+      fullPage: false
+    };
+
+    if (format === 'jpeg') {
+      screenshotOptions.quality = numQuality;
+    }
+
+    const buffer = await page.screenshot(screenshotOptions);
+
+    await page.close();
+    browserPool.releaseBrowser(browser);
+
+    console.log(`GET Screenshot generated successfully: ${buffer.length} bytes`);
+    
+    res.set('Content-Type', `image/${format}`);
+    res.set('Content-Length', buffer.length.toString());
+    res.send(buffer);
+
+  } catch (err) {
+    console.error('GET Screenshot Error:', err);
+    
+    if (browser) {
+      try {
+        await browser.close();
+      } catch (closeErr) {
+        console.error('Error closing browser:', closeErr);
+      }
+    }
+    
+    res.status(500).json({
+      error: 'Error generating screenshot',
+      message: err.message
+    });
+  }
+});
+
 // Ana Screenshot Endpoint - Rate limiting uygulanmış
 app.post('/screenshot', screenshotLimiter, async (req, res) => {
   const { 
@@ -188,8 +303,11 @@ app.post('/screenshot', screenshotLimiter, async (req, res) => {
     // Tüm karolar yüklenene kadar bekle
     await page.waitForFunction(
       () => document.title === 'ready',
-      { timeout: 15000 } // 15 saniyeye kadar bekle
+      { timeout: 20000 } // 20 saniyeye kadar bekle
     );
+
+    // Ek güvenlik: biraz daha bekle ki render tamamen tamamlansın
+    await page.waitForTimeout(1000);
 
     // Screenshot ayarları
     const screenshotOptions = {
@@ -231,42 +349,75 @@ app.post('/screenshot', screenshotLimiter, async (req, res) => {
   }
 });
 
+// Debug: HTML preview endpoint
+app.post('/preview-html', (req, res) => {
+  const { lat, lon, zoom, wms = null } = req.body;
+  
+  if (!lat || !lon || !zoom) {
+    return res.status(400).json({
+      error: 'lat, lon, and zoom are required'
+    });
+  }
+  
+  const html = generateHtml(lat, lon, zoom, wms);
+  res.set('Content-Type', 'text/html');
+  res.send(html);
+});
+
 // API Usage Info Endpoint
 app.get('/api-info', (req, res) => {
   res.json({
     service: 'Map Screenshot API',
     version: '1.1.0',
-    endpoints: {
+        endpoints: {
+      'GET /screenshot': {
+        description: 'Generate map screenshot with URL parameters',
+        parameters: {
+          lat: 'number (required) - Latitude between -90 and 90',
+          lon: 'number (required) - Longitude between -180 and 180', 
+          zoom: 'number (required) - Zoom level between 1 and 20',
+          width: 'number (optional) - Image width between 100 and 2000, default: 640',
+          height: 'number (optional) - Image height between 100 and 2000, default: 480',
+          format: 'string (optional) - Image format: jpeg, png, webp, default: jpeg',
+          quality: 'number (optional) - JPEG quality between 1 and 100, default: 70'
+        },
+        example: '/screenshot?lat=41.0082&lon=28.9784&zoom=15&width=800&height=600&format=png'
+      },
       'POST /screenshot': {
-        description: 'Generate map screenshot',
-                 parameters: {
-           lat: 'number (required) - Latitude between -90 and 90',
-           lon: 'number (required) - Longitude between -180 and 180', 
-           zoom: 'number (required) - Zoom level between 1 and 20',
-           width: 'number (optional) - Image width between 100 and 2000, default: 640',
-           height: 'number (optional) - Image height between 100 and 2000, default: 480',
-           format: 'string (optional) - Image format: jpeg, png, webp, default: jpeg',
-           quality: 'number (optional) - JPEG quality between 1 and 100, default: 70',
-           wms: 'array (optional) - WMS layers to overlay, max 5 layers'
-         }
+        description: 'Generate map screenshot with JSON body (supports WMS layers)',
+        parameters: {
+          lat: 'number (required) - Latitude between -90 and 90',
+          lon: 'number (required) - Longitude between -180 and 180', 
+          zoom: 'number (required) - Zoom level between 1 and 20',
+          width: 'number (optional) - Image width between 100 and 2000, default: 640',
+          height: 'number (optional) - Image height between 100 and 2000, default: 480',
+          format: 'string (optional) - Image format: jpeg, png, webp, default: jpeg',
+          quality: 'number (optional) - JPEG quality between 1 and 100, default: 70',
+          wms: 'array (optional) - WMS layers to overlay, max 5 layers'
+        }
       },
       'GET /health': {
         description: 'Health check endpoint'
       },
       'GET /api-info': {
         description: 'API usage information'
+      },
+      'POST /preview-html': {
+        description: 'Debug endpoint to preview generated HTML'
       }
     },
          rateLimits: {
        screenshot: '10 requests per 15 minutes per IP'
      },
      examples: {
-       basicScreenshot: {
+       getRequest: '/screenshot?lat=41.0082&lon=28.9784&zoom=15',
+       getRequestCustom: '/screenshot?lat=41.0082&lon=28.9784&zoom=15&width=1200&height=800&format=png&quality=90',
+       postBasic: {
          lat: 41.0082,
          lon: 28.9784,
          zoom: 15
        },
-       withWmsLayers: {
+       postWithWms: {
          lat: 41.0082,
          lon: 28.9784,
          zoom: 15,
@@ -330,6 +481,21 @@ function generateHtml(lat, lon, zoom, wmsLayers = null) {
         padding: 0;
         height: 100%;
         width: 100%;
+        background: transparent;
+      }
+      
+      /* OpenLayers spesifik stil düzeltmeleri */
+      .ol-viewport {
+        background: transparent !important;
+      }
+      
+      .ol-layer {
+        position: relative;
+      }
+      
+      /* Loading sırasında beyaz ekranı önle */
+      .ol-viewport canvas {
+        background: transparent;
       }
     </style>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/ol@v7.3.0/ol.css" />
@@ -359,7 +525,19 @@ function generateHtml(lat, lon, zoom, wmsLayers = null) {
         view: new ol.View({
           center: ol.proj.fromLonLat([${lon}, ${lat}]),
           zoom: ${zoom}
-        })
+        }),
+        // Ek harita ayarları
+        loadTilesWhileAnimating: true,
+        loadTilesWhileInteracting: true
+      });
+
+      // Harita render tamamlandığında kontrol et
+      map.on('rendercomplete', function() {
+        console.log('Map render completed');
+        // Tüm katmanlar yüklendiyse ready yap
+        if (total > 0 && loaded >= total) {
+          document.title = 'ready';
+        }
       });
 
       // Tüm katmanların tile'larını takip et
@@ -385,13 +563,24 @@ function generateHtml(lat, lon, zoom, wmsLayers = null) {
         });
       });
 
-      // Timeout güvenliği - 12 saniye sonra zorla ready yap
+      // İlk render'ı tetikle ve bekle
+      map.renderSync();
+      
+      // Eğer hiç tile yoksa (offline harita gibi) direkt ready yap
+      setTimeout(() => {
+        if (total === 0 && document.title !== 'ready') {
+          console.log('No tiles to load, setting ready');
+          document.title = 'ready';
+        }
+      }, 2000);
+
+      // Timeout güvenliği - 15 saniye sonra zorla ready yap
       setTimeout(() => {
         if (document.title !== 'ready') {
           console.warn('Forcing ready state after timeout');
           document.title = 'ready';
         }
-      }, 12000);
+      }, 15000);
     </script>
   </body>
   </html>`;
