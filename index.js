@@ -378,7 +378,7 @@ app.post('/screenshot', screenshotLimiter, async (req, res) => {
 
 // Debug: HTML preview endpoint
 app.post('/preview-html', (req, res) => {
-  const { lat, lon, zoom, wms = null } = req.body;
+  const { lat, lon, zoom, wms = null, pin = null } = req.body;
   
   if (!lat || !lon || !zoom) {
     return res.status(400).json({
@@ -386,7 +386,7 @@ app.post('/preview-html', (req, res) => {
     });
   }
   
-  const html = generateHtml(lat, lon, zoom, wms);
+  const html = generateHtml(lat, lon, zoom, wms, pin);
   res.set('Content-Type', 'text/html');
   res.send(html);
 });
@@ -529,9 +529,10 @@ function generateHtml(lat, lon, zoom, wmsLayers = null, pin = null) {
     const pinSize = pin.size || 20;
     
     pinLayerCode = `
-    // Pin Layer
+    // Pin Layer - En üstte görünmesi için
     const pinFeature = new ol.Feature({
-      geometry: new ol.geom.Point(ol.proj.fromLonLat([${pinLon}, ${pinLat}]))
+      geometry: new ol.geom.Point(ol.proj.fromLonLat([${pinLon}, ${pinLat}])),
+      name: 'pin'
     });
 
     const pinStyle = new ol.style.Style({
@@ -542,22 +543,26 @@ function generateHtml(lat, lon, zoom, wmsLayers = null, pin = null) {
         }),
         stroke: new ol.style.Stroke({
           color: '#FFFFFF',
-          width: 3
+          width: 4
         })
       }),
       text: new ol.style.Text({
         text: '${pinText}',
-        font: 'bold 14px Arial',
+        font: 'bold 16px Arial',
         fill: new ol.style.Fill({
-          color: '#000000'
+          color: '#FFFFFF'
         }),
         stroke: new ol.style.Stroke({
-          color: '#FFFFFF',
-          width: 3
+          color: '#000000',
+          width: 4
         }),
-        offsetY: -35,
+        offsetY: -${pinSize + 20},
         textAlign: 'center',
-        textBaseline: 'middle'
+        textBaseline: 'middle',
+        backgroundFill: new ol.style.Fill({
+          color: 'rgba(0, 0, 0, 0.7)'
+        }),
+        padding: [5, 10, 5, 10]
       })
     });
 
@@ -566,11 +571,15 @@ function generateHtml(lat, lon, zoom, wmsLayers = null, pin = null) {
     const pinLayer = new ol.layer.Vector({
       source: new ol.source.Vector({
         features: [pinFeature]
-      })
+      }),
+      zIndex: 1000 // En üstte görünmesi için yüksek z-index
     });
+    
+    console.log('Pin created at:', ${pinLon}, ${pinLat}, 'with text:', '${pinText}');
     `;
     
-    layersArray += `\n  layers.push(pinLayer);`;
+    // Pin'i en son ekle ki diğer katmanların üstünde olsun
+    layersArray += `\n  // Pin layer'ı en son ekle`;
   }
 
   return `
@@ -623,6 +632,8 @@ function generateHtml(lat, lon, zoom, wmsLayers = null, pin = null) {
       
       ${layersArray}
       tileSources.push(osmLayer.getSource());
+      
+      ${pin ? 'layers.push(pinLayer);' : '// No pin layer'}
 
       const map = new ol.Map({
         target: 'map',
@@ -669,8 +680,17 @@ function generateHtml(lat, lon, zoom, wmsLayers = null, pin = null) {
         });
       });
 
+      // Debug bilgileri
+      console.log('Map created with', layers.length, 'layers');
+      layers.forEach((layer, index) => {
+        console.log('Layer', index, ':', layer.constructor.name, layer.getZIndex ? layer.getZIndex() : 'no z-index');
+      });
+      
       // İlk render'ı tetikle ve bekle
       map.renderSync();
+      
+      // Pin var mı kontrol et
+      ${pin ? `console.log('Pin should be visible at:', ${pin.lat !== undefined ? pin.lat : lat}, ${pin.lon !== undefined ? pin.lon : lon});` : ''}
       
       // Eğer hiç tile yoksa (offline harita gibi) direkt ready yap
       setTimeout(() => {
