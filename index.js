@@ -69,7 +69,7 @@ class BrowserPool {
 const browserPool = new BrowserPool();
 
 // Input Validation Function
-function validateInput(lat, lon, zoom, width, height, wms) {
+function validateInput(lat, lon, zoom, width, height, wms, pin) {
   const errors = [];
 
   // Latitude kontrolü
@@ -117,6 +117,32 @@ function validateInput(lat, lon, zoom, width, height, wms) {
           errors.push(`WMS layer ${index + 1}: opacity must be a number between 0 and 1`);
         }
       });
+    }
+  }
+
+  // Pin kontrolü
+  if (pin) {
+    if (typeof pin !== 'object' || Array.isArray(pin)) {
+      errors.push('Pin must be an object');
+    } else {
+      if (pin.lat !== undefined && (typeof pin.lat !== 'number' || pin.lat < -90 || pin.lat > 90)) {
+        errors.push('Pin latitude must be a number between -90 and 90');
+      }
+      if (pin.lon !== undefined && (typeof pin.lon !== 'number' || pin.lon < -180 || pin.lon > 180)) {
+        errors.push('Pin longitude must be a number between -180 and 180');
+      }
+      if (pin.text && typeof pin.text !== 'string') {
+        errors.push('Pin text must be a string');
+      }
+      if (pin.text && pin.text.length > 50) {
+        errors.push('Pin text cannot exceed 50 characters');
+      }
+      if (pin.color && typeof pin.color !== 'string') {
+        errors.push('Pin color must be a valid color string');
+      }
+      if (pin.size && (typeof pin.size !== 'number' || pin.size < 10 || pin.size > 50)) {
+        errors.push('Pin size must be a number between 10 and 50');
+      }
     }
   }
 
@@ -259,11 +285,12 @@ app.post('/screenshot', screenshotLimiter, async (req, res) => {
     height = 480, 
     format = 'jpeg',
     quality = 70,
-    wms = null
+    wms = null,
+    pin = null
   } = req.body;
 
   // Input validation
-  const validationErrors = validateInput(lat, lon, zoom, width, height, wms);
+  const validationErrors = validateInput(lat, lon, zoom, width, height, wms, pin);
   if (validationErrors.length > 0) {
     return res.status(400).json({
       error: 'Validation failed',
@@ -290,14 +317,14 @@ app.post('/screenshot', screenshotLimiter, async (req, res) => {
   let browser = null;
 
   try {
-    console.log(`Screenshot request: lat=${lat}, lon=${lon}, zoom=${zoom}, ${width}x${height}, ${format}${wms ? `, WMS layers: ${wms.length}` : ''}`);
+    console.log(`Screenshot request: lat=${lat}, lon=${lon}, zoom=${zoom}, ${width}x${height}, ${format}${wms ? `, WMS layers: ${wms.length}` : ''}${pin ? `, Pin: ${pin.text || 'No text'}` : ''}`);
     
     browser = await browserPool.getBrowser();
     const page = await browser.newPage();
     
     await page.setViewport({ width: parseInt(width), height: parseInt(height) });
 
-    const html = generateHtml(lat, lon, zoom, wms);
+    const html = generateHtml(lat, lon, zoom, wms, pin);
     await page.setContent(html, { waitUntil: 'domcontentloaded' });
 
     // Tüm karolar yüklenene kadar bekle
@@ -393,7 +420,8 @@ app.get('/api-info', (req, res) => {
           height: 'number (optional) - Image height between 100 and 2000, default: 480',
           format: 'string (optional) - Image format: jpeg, png, webp, default: jpeg',
           quality: 'number (optional) - JPEG quality between 1 and 100, default: 70',
-          wms: 'array (optional) - WMS layers to overlay, max 5 layers'
+          wms: 'array (optional) - WMS layers to overlay, max 5 layers',
+          pin: 'object (optional) - Pin marker with text label'
         }
       },
       'GET /health': {
@@ -431,12 +459,34 @@ app.get('/api-info', (req, res) => {
              opacity: 0.7
            }
          ]
+       },
+       postWithPin: {
+         lat: 41.0082,
+         lon: 28.9784,
+         zoom: 15,
+         pin: {
+           text: 'DEPREM',
+           color: '#FF0000',
+           size: 25
+         }
+       },
+       postWithCustomPin: {
+         lat: 41.0082,
+         lon: 28.9784,
+         zoom: 15,
+         pin: {
+           lat: 41.0100,
+           lon: 28.9800,
+           text: 'ACIL DURUM',
+           color: '#FF6600',
+           size: 30
+         }
        }
      }
    });
  });
 
-function generateHtml(lat, lon, zoom, wmsLayers = null) {
+function generateHtml(lat, lon, zoom, wmsLayers = null, pin = null) {
   // WMS katmanları için JavaScript kodunu oluştur
   let wmsLayersCode = '';
   let layersArray = '  layers.push(osmLayer);';
@@ -467,6 +517,60 @@ function generateHtml(lat, lon, zoom, wmsLayers = null) {
       layersArray += `\n  layers.push(${layerName});`;
       layersArray += `\n  tileSources.push(${layerName}.getSource());`;
     });
+  }
+
+  // Pin katmanı için kod oluştur
+  let pinLayerCode = '';
+  if (pin) {
+    const pinLat = pin.lat !== undefined ? pin.lat : lat;
+    const pinLon = pin.lon !== undefined ? pin.lon : lon;
+    const pinText = pin.text || '';
+    const pinColor = pin.color || '#FF0000';
+    const pinSize = pin.size || 20;
+    
+    pinLayerCode = `
+    // Pin Layer
+    const pinFeature = new ol.Feature({
+      geometry: new ol.geom.Point(ol.proj.fromLonLat([${pinLon}, ${pinLat}]))
+    });
+
+    const pinStyle = new ol.style.Style({
+      image: new ol.style.Circle({
+        radius: ${pinSize},
+        fill: new ol.style.Fill({
+          color: '${pinColor}'
+        }),
+        stroke: new ol.style.Stroke({
+          color: '#FFFFFF',
+          width: 3
+        })
+      }),
+      text: new ol.style.Text({
+        text: '${pinText}',
+        font: 'bold 14px Arial',
+        fill: new ol.style.Fill({
+          color: '#000000'
+        }),
+        stroke: new ol.style.Stroke({
+          color: '#FFFFFF',
+          width: 3
+        }),
+        offsetY: -35,
+        textAlign: 'center',
+        textBaseline: 'middle'
+      })
+    });
+
+    pinFeature.setStyle(pinStyle);
+
+    const pinLayer = new ol.layer.Vector({
+      source: new ol.source.Vector({
+        features: [pinFeature]
+      })
+    });
+    `;
+    
+    layersArray += `\n  layers.push(pinLayer);`;
   }
 
   return `
@@ -510,6 +614,8 @@ function generateHtml(lat, lon, zoom, wmsLayers = null) {
       });
 
       ${wmsLayersCode}
+
+      ${pinLayerCode}
 
       // Katmanları topla
       const layers = [];
