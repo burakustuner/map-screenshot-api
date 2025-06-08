@@ -96,12 +96,12 @@ function validateInput(lat, lon, zoom, width, height, wms, pin) {
   }
 
   // Width kontrolü
-  if (width && (typeof width !== 'number' || width < 100 || width > 2000)) {
+  if (width && (typeof width !== 'number' || width < 50 || width > 2000)) {
     errors.push('Width must be a number between 100 and 2000');
   }
 
   // Height kontrolü
-  if (height && (typeof height !== 'number' || height < 100 || height > 2000)) {
+  if (height && (typeof height !== 'number' || height < 50 || height > 2000)) {
     errors.push('Height must be a number between 100 and 2000');
   }
 
@@ -148,7 +148,7 @@ function validateInput(lat, lon, zoom, width, height, wms, pin) {
       if (pin.color && typeof pin.color !== 'string') {
         errors.push('Pin color must be a valid color string');
       }
-      if (pin.size && (typeof pin.size !== 'number' || pin.size < 10 || pin.size > 50)) {
+      if (pin.size && (typeof pin.size !== 'number' || pin.size < 1 || pin.size > 50)) {
         errors.push('Pin size must be a number between 10 and 50');
       }
     }
