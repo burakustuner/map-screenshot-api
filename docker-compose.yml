@@ -8,6 +8,4 @@ services:
       - "1621:3000"  # Uygulaman hangi portta dinliyorsa
     environment:
       - NODE_ENV=production
-    volumes:
-      - .:/app
     restart: unless-stopped
