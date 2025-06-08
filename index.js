@@ -149,7 +149,13 @@ function validateInput(lat, lon, zoom, width, height, wms, pin) {
         errors.push('Pin color must be a valid color string');
       }
       if (pin.size && (typeof pin.size !== 'number' || pin.size < 1 || pin.size > 50)) {
-        errors.push('Pin size must be a number between 10 and 50');
+        errors.push('Pin size must be a number between 1 and 50');
+      }
+      if (pin.textSize && (typeof pin.textSize !== 'number' || pin.textSize < 4 || pin.textSize > 48)) {
+        errors.push('Pin textSize must be a number between 4 and 48');
+      }
+      if (pin.type && !['circle', 'square', 'triangle', 'star', 'diamond'].includes(pin.type)) {
+        errors.push('Pin type must be one of: circle, square, triangle, star, diamond');
       }
     }
   }
@@ -429,7 +435,7 @@ app.get('/api-info', (req, res) => {
           format: 'string (optional) - Image format: jpeg, png, webp, default: jpeg',
           quality: 'number (optional) - JPEG quality between 1 and 100, default: 70',
           wms: 'array (optional) - WMS layers to overlay, max 5 layers',
-          pin: 'object (optional) - Pin marker with text label'
+          pin: 'object (optional) - Pin marker with customizable shape, size, color and text'
         }
       },
       'GET /health': {
@@ -474,8 +480,10 @@ app.get('/api-info', (req, res) => {
          zoom: 15,
          pin: {
            text: 'DEPREM',
+           type: 'circle',
            color: '#FF0000',
-           size: 25
+           size: 25,
+           textSize: 18
          }
        },
        postWithCustomPin: {
@@ -486,8 +494,22 @@ app.get('/api-info', (req, res) => {
            lat: 41.0100,
            lon: 28.9800,
            text: 'ACIL DURUM',
+           type: 'star',
            color: '#FF6600',
-           size: 30
+           size: 30,
+           textSize: 20
+         }
+       },
+       postWithShapes: {
+         lat: 41.0082,
+         lon: 28.9784,
+         zoom: 15,
+         pin: {
+           text: 'TOPLANMA',
+           type: 'triangle',
+           color: '#00FF00',
+           size: 35,
+           textSize: 24
          }
        }
      }
@@ -535,42 +557,101 @@ function generateHtml(lat, lon, zoom, wmsLayers = null, pin = null) {
     const pinText = pin.text || '';
     const pinColor = pin.color || '#FF0000';
     const pinSize = pin.size || 20;
+    const pinType = pin.type || 'circle';
+    const textSize = pin.textSize || 16;
     
     pinLayerCode = `
+    // Pin şekil fonksiyonları
+    function createPinShape(type, size, color) {
+      const commonStroke = new ol.style.Stroke({
+        color: '#FFFFFF',
+        width: 3
+      });
+      const commonFill = new ol.style.Fill({
+        color: color
+      });
+
+      switch(type) {
+        case 'circle':
+          return new ol.style.Circle({
+            radius: size,
+            fill: commonFill,
+            stroke: commonStroke
+          });
+          
+        case 'square':
+          return new ol.style.RegularShape({
+            points: 4,
+            radius: size,
+            angle: Math.PI / 4,
+            fill: commonFill,
+            stroke: commonStroke
+          });
+          
+        case 'triangle':
+          return new ol.style.RegularShape({
+            points: 3,
+            radius: size,
+            rotation: 0,
+            fill: commonFill,
+            stroke: commonStroke
+          });
+          
+        case 'star':
+          return new ol.style.RegularShape({
+            points: 5,
+            radius: size,
+            radius2: size * 0.6,
+            angle: 0,
+            fill: commonFill,
+            stroke: commonStroke
+          });
+          
+        case 'diamond':
+          return new ol.style.RegularShape({
+            points: 4,
+            radius: size,
+            angle: 0,
+            fill: commonFill,
+            stroke: commonStroke
+          });
+          
+        default:
+          return new ol.style.Circle({
+            radius: size,
+            fill: commonFill,
+            stroke: commonStroke
+          });
+      }
+    }
+
     // Pin Layer - En üstte görünmesi için
     const pinFeature = new ol.Feature({
       geometry: new ol.geom.Point(ol.proj.fromLonLat([${pinLon}, ${pinLat}])),
       name: 'pin'
     });
 
+    const pinShape = createPinShape('${pinType}', ${pinSize}, '${pinColor}');
+
     const pinStyle = new ol.style.Style({
-      image: new ol.style.Circle({
-        radius: ${pinSize},
-        fill: new ol.style.Fill({
-          color: '${pinColor}'
-        }),
-        stroke: new ol.style.Stroke({
-          color: '#FFFFFF',
-          width: 4
-        })
-      }),
+      image: pinShape,
       text: new ol.style.Text({
         text: '${pinText}',
-        font: 'bold 16px Arial',
+        font: 'bold ${textSize}px Arial',
         fill: new ol.style.Fill({
           color: '#FFFFFF'
         }),
         stroke: new ol.style.Stroke({
           color: '#000000',
-          width: 4
+          width: 3
         }),
-        offsetY: -${pinSize + 20},
+        offsetY: -${pinSize + 25},
         textAlign: 'center',
         textBaseline: 'middle',
         backgroundFill: new ol.style.Fill({
-          color: 'rgba(0, 0, 0, 0.7)'
+          color: 'rgba(0, 0, 0, 0.8)'
         }),
-        padding: [5, 10, 5, 10]
+        padding: [4, 8, 4, 8]
       })
     });
 
@@ -583,7 +664,7 @@ function generateHtml(lat, lon, zoom, wmsLayers = null, pin = null) {
       zIndex: 1000 // En üstte görünmesi için yüksek z-index
     });
     
-    console.log('Pin created at:', ${pinLon}, ${pinLat}, 'with text:', '${pinText}');
+    console.log('Pin created at:', ${pinLon}, ${pinLat}, 'Type:', '${pinType}', 'Text:', '${pinText}', 'TextSize:', ${textSize});
     `;
     
     // Pin'i en son ekle ki diğer katmanların üstünde olsun
