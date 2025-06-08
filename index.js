@@ -26,7 +26,7 @@ app.post('/screenshot', async (req, res) => {
     );
 
     const buffer = await page.screenshot({
-      type: 'jpeg',
+      type: 'png',
       quality: 70,
       fullPage: false
     });
