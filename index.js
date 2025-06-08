@@ -14,13 +14,17 @@ app.post('/screenshot', async (req, res) => {
     });
 
     const page = await browser.newPage();
-
-    // ✅ Küçük ve optimize çözünürlük
     await page.setViewport({ width: 640, height: 480 });
 
     const html = generateHtml(lat, lon, zoom);
- await page.setContent(html, { waitUntil: 'networkidle0' });
-    // ✅ JPEG çıktı, kalite düşürülerek boyut azaltıldı
+    await page.setContent(html, { waitUntil: 'domcontentloaded' });
+
+    // Tüm karolar yüklenene kadar bekle (title 'ready' olunca devam)
+    await page.waitForFunction(
+      () => document.title === 'ready',
+      { timeout: 10000 } // 10 saniyeye kadar bekle
+    );
+
     const buffer = await page.screenshot({
       type: 'jpeg',
       quality: 70,
@@ -37,14 +41,13 @@ app.post('/screenshot', async (req, res) => {
   }
 });
 
-// 🔧 HTML + OpenLayers haritası
 function generateHtml(lat, lon, zoom) {
   return `
   <!DOCTYPE html>
   <html>
   <head>
     <meta charset="utf-8" />
-    <title>Map Screenshot</title>
+    <title>Loading</title>
     <style>
       html, body, #map {
         margin: 0;
@@ -59,19 +62,40 @@ function generateHtml(lat, lon, zoom) {
   <body>
     <div id="map"></div>
     <script>
+      const layer = new ol.layer.Tile({
+        source: new ol.source.OSM()
+      });
+
       const map = new ol.Map({
         target: 'map',
-        controls: [], // ✅ UI kontrolleri kaldırıldı
-        layers: [
-          new ol.layer.Tile({
-            source: new ol.source.OSM()
-          })
-          // WMS kaldırıldı - istersen tekrar ekleyebilirsin
-        ],
+        controls: [],
+        layers: [layer],
         view: new ol.View({
           center: ol.proj.fromLonLat([${lon}, ${lat}]),
           zoom: ${zoom}
         })
+      });
+
+      const tileSource = layer.getSource();
+      let total = 0, loaded = 0;
+
+      tileSource.on('tileloadstart', () => {
+        total++;
+      });
+
+      tileSource.on('tileloadend', () => {
+        loaded++;
+        if (total > 0 && loaded >= total) {
+          document.title = 'ready';
+        }
+      });
+
+      // Ek güvenlik: tileloaderror gibi durumlarda da ilerle
+      tileSource.on('tileloaderror', () => {
+        loaded++;
+        if (total > 0 && loaded >= total) {
+          document.title = 'ready';
+        }
       });
     </script>
   </body>
